@@ -1,4 +1,4 @@
-# Production RAG System — Conversational AI with Evaluation & Observability
+# ChatPDF | Production RAG System — Conversational AI with Evaluation, Observability and SSE Streaming
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![LangChain](https://img.shields.io/badge/LangChain-1.0-green.svg)](https://langchain.com/)
@@ -28,6 +28,89 @@ This repo showcases **LLM / RAG engineering at production level**: not a toy dem
 
 ---
 
+## Architecture
+
+### System overview
+
+```mermaid
+flowchart LR
+    subgraph Client
+        UI[Svelte UI]
+    end
+
+    subgraph API["Flask API"]
+        Conv[Conversations]
+        Eval[Eval]
+        PDF[PDFs / Auth]
+    end
+
+    subgraph RAG["RAG pipeline"]
+        direction TB
+        C[Condense]
+        R[Retrieve]
+        G[Generate]
+        C --> R --> G
+    end
+
+    subgraph Data
+        VS[(Vector Store)]
+        DB[(SQL)]
+        Redis[(Redis)]
+    end
+
+    subgraph Workers
+        Celery[Celery]
+    end
+
+    UI <--> API
+    Conv --> RAG
+    Eval --> RAG
+    RAG --> VS
+    RAG --> DB
+    API --> Redis
+    PDF --> Celery
+    Celery --> VS
+```
+
+### RAG pipeline (per message)
+
+```mermaid
+flowchart LR
+    subgraph Input
+        Q[question]
+        H[chat_history]
+    end
+
+    subgraph Pipeline
+        A[1. Condense]
+        B[2. Retrieve]
+        C[3. Format]
+        D[4. Generate]
+    end
+
+    subgraph Output
+        Ans[answer]
+        Docs[source_documents]
+    end
+
+    Q --> A
+    H --> A
+    A --> B
+    B --> C
+    C --> D
+    D --> Ans
+    B --> Docs
+```
+
+| Step | In | Out |
+|------|----|-----|
+| **Condense** | question + chat_history | standalone question |
+| **Retrieve** | standalone question | top-k chunks |
+| **Format** | chunks | context string |
+| **Generate** | context + question | answer (streamed) + source_documents |
+
+---
+
 ## RAG flow (per request)
 
 `question` + `chat_history` → **condense** to standalone question → **retrieve** top-k chunks → **format** context → **generate** answer (streaming). Output: `answer` + `source_documents`. Eval runs the same pipeline (no history) and computes context relevance, faithfulness, answer relevance, and latencies.
@@ -41,6 +124,19 @@ This repo showcases **LLM / RAG engineering at production level**: not a toy dem
 - **Question condensation:** Converts follow-ups (e.g. “How does it work?”) into standalone queries using chat history so retrieval stays on-topic.
 - **Persistent history:** `SqlMessageHistory` + `RunnableWithMessageHistory`; messages stored in SQL and loaded per conversation.
 - **Streaming:** Token-level streaming for the final answer; condense + retrieve run once, then QA chain streams tokens over SSE.
+
+#### Token streaming: from LLM to frontend
+
+Tokens flow in one direction from the QA LLM to the UI. Here’s the path with the relevant code:
+
+| Step | Where | What happens |
+|------|--------|--------------|
+| **1. LLM emits tokens** | `app/chat/llms/chatopenai.py` | QA LLM is built with `disable_streaming=not chat_args.streaming`. When the API calls with `stream=True`, the LLM (e.g. `ChatOllama`) streams tokens from the model. |
+| **2. Chain yields chunks** | `app/chat/chains/conversational_rag.py` | `StreamingConversationalRAGChain.stream()` runs condense + retrieve once, then `for chunk in self.qa_chain.stream(qa_input, ...): yield {"answer": chunk}`. Each LLM token is a `chunk`; `StrOutputParser` turns LLM stream into string chunks. |
+| **3. API sends SSE** | `app/web/views/conversation_views.py` | For `?stream=true`, the view iterates `for chunk in chat.stream(...)`, gets `text = chunk.get("answer", "")`, and `yield text`. Response is `stream_with_context(generate()), mimetype="text/event-stream"` — each yielded string is sent as SSE body. |
+| **4. Frontend appends to message** | `client/src/store/chat/stream.ts` | `fetch(..., ?stream=true)` then `response.body.getReader()`. Loop: `reader.read()` → `TextDecoder().decode(value)` → `_appendResponse(responseMessage.id, text)` updates the assistant message in the store so the UI shows tokens as they arrive. |
+
+End-to-end: **LLM stream → `qa_chain.stream()` → view generator yields text → SSE → fetch stream → `reader.read()` → decode → append to message content.**
 
 ### 2. Evaluation Framework
 
