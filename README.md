@@ -8,6 +8,13 @@
 
 ---
 
+### Screenshot
+
+![ChatPDF screenshot](screenshot/image.png)
+
+---
+
+
 ## Why This Project Matters
 
 This repo showcases **LLM / RAG engineering at production level**: not a toy demo, but a system with **conversational context**, **evaluation pipelines**, **observability**, and **operational patterns** (async workers, caching, multi-provider support) that mirror what you’d run in a real product or platform team.
