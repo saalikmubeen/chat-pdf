@@ -1,9 +1,7 @@
 from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.messages import BaseMessage, message_to_dict, messages_from_dict
-from app.web.api import (
-    get_messages_by_conversation_id,
-    add_message_to_conversation
-)
+from langchain_core.messages import BaseMessage
+
+from app.web.api import add_message_to_conversation, get_messages_by_conversation_id
 
 
 class SqlMessageHistory(BaseChatMessageHistory):
@@ -29,7 +27,7 @@ class SqlMessageHistory(BaseChatMessageHistory):
         add_message_to_conversation(
             conversation_id=self.conversation_id,
             role=message.type,
-            content=message.content
+            content=message.content,
         )
 
     def add_messages(self, messages: list[BaseMessage]) -> None:
@@ -39,4 +37,3 @@ class SqlMessageHistory(BaseChatMessageHistory):
 
     def clear(self) -> None:
         """Clear conversation history (implement if needed)."""
-        pass

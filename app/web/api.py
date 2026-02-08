@@ -1,5 +1,5 @@
-from typing import Dict
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
+
 from app.web.db import db
 from app.web.db.models import Message
 from app.web.db.models.conversation import Conversation
@@ -18,13 +18,15 @@ def get_messages_by_conversation_id(
     messages = (
         db.session.query(Message)
         .filter_by(conversation_id=conversation_id)
-        .order_by(Message.created_on.desc())
+        .order_by(Message.created_on.asc())
     )
     return [message.as_lc_message() for message in messages]
 
 
 def add_message_to_conversation(
-    conversation_id: str, role: str, content: str
+    conversation_id: str,
+    role: str,
+    content: str,
 ) -> Message:
     """
     Creates and stores a new message tied to the given conversation_id
@@ -43,7 +45,7 @@ def add_message_to_conversation(
     )
 
 
-def get_conversation_components(conversation_id: str) -> Dict[str, str]:
+def get_conversation_components(conversation_id: str) -> dict[str, str]:
     """
     Returns the components used in a conversation
     """
@@ -56,7 +58,10 @@ def get_conversation_components(conversation_id: str) -> Dict[str, str]:
 
 
 def set_conversation_components(
-    conversation_id: str, llm: str, retriever: str, memory: str
+    conversation_id: str,
+    llm: str,
+    retriever: str,
+    memory: str,
 ) -> None:
     """
     Sets the components used by a conversation

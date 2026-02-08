@@ -2,6 +2,7 @@ from flask import Blueprint, Response, g, jsonify, request, stream_with_context
 
 from app.chat import ChatArgs, build_chat
 from app.chat.tracing.langfuse import langfuse
+from app.web.api import add_message_to_conversation
 from app.web.db.models import Conversation, Pdf
 from app.web.hooks import load_model, login_required
 
@@ -95,6 +96,10 @@ def create_message(conversation):
                         full_response += text
                         yield text
 
+                # Persist messages to DB (RunnableWithMessageHistory may not persist on stream)
+                add_message_to_conversation(conversation_id, "human", question)
+                add_message_to_conversation(conversation_id, "ai", full_response)
+
                 output_data = {"answer": full_response}
                 generation.end(output=output_data)
                 trace.update(output=output_data)
@@ -137,6 +142,10 @@ def create_message(conversation):
             content = result.get("answer") or result.get("content") or str(result)
         else:
             content = str(result)
+
+        # Persist messages to DB (same as streaming path)
+        add_message_to_conversation(conversation_id, "human", question)
+        add_message_to_conversation(conversation_id, "ai", content)
 
         output_data = {"answer": content}
         generation.end(output=output_data)
